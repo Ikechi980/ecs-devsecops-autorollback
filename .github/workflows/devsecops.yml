@@ -1,0 +1,46 @@
+name: devsecops
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      break_health:
+        description: "Build a deliberately unhealthy image (rollback drill)"
+        type: boolean
+        default: false
+
+# Least privilege by default; jobs opt in to anything more.
+permissions:
+  contents: read
+
+jobs:
+  security-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      # Actions are pinned to full commit SHAs (tags are mutable).
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history: a secret removed in a later commit is still leaked
+          persist-credentials: false
+
+      # Pinned gitleaks binary, verified against its published checksum,
+      # rather than a third-party action.
+      - name: Install gitleaks
+        run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum --check --strict
+          tar -xzf "$tarball" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$tarball" gitleaks
+
+      - name: Secrets scan (gitleaks)
+        run: gitleaks git . --redact --no-banner --exit-code 1 --verbose
