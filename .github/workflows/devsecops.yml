@@ -22,6 +22,8 @@ jobs:
     env:
       GITLEAKS_VERSION: "8.30.1"
       GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+      TRIVY_VERSION: "0.75.0"
+      TRIVY_SHA256: "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
     steps:
       # Actions are pinned to full commit SHAs (tags are mutable).
       - name: Checkout
@@ -44,3 +46,24 @@ jobs:
 
       - name: Secrets scan (gitleaks)
         run: gitleaks git . --redact --no-banner --exit-code 1 --verbose
+
+      # Same pattern as gitleaks: pinned, checksum-verified binary instead of
+      # trivy-action (whose tags were hijacked in a 2026 supply-chain attack).
+      - name: Install trivy
+        run: |
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSfL -o "$tarball" \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
+          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum --check --strict
+          tar -xzf "$tarball" trivy
+          sudo install -m 0755 trivy /usr/local/bin/trivy
+          rm -f "$tarball" trivy
+
+      - name: Dependency scan (trivy fs)
+        run: |
+          trivy fs app/ \
+            --scanners vuln \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --no-progress
