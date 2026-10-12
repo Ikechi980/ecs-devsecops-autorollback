@@ -8,6 +8,15 @@ variable "name" {
   }
 }
 
+variable "tags" {
+  description = "Tags applied to every resource (plus Name = var.name)."
+  type        = map(string)
+  default = {
+    Project   = "ecs-devsecops-autorollback"
+    ManagedBy = "terraform"
+  }
+}
+
 variable "region" {
   description = "AWS region."
   type        = string

@@ -6,11 +6,9 @@ locals {
 # ---------- Security group ----------
 
 resource "aws_security_group" "alb" {
-  name        = "${var.name}-alb"
+  name        = "alb"
   description = "Public HTTP(S) in; only the container port out to the private subnets"
   vpc_id      = aws_vpc.main.id
-
-  tags = { Name = "${var.name}-alb" }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
@@ -56,7 +54,7 @@ resource "aws_lb" "main" {
   #checkov:skip=CKV_AWS_91:Access logs need a dedicated S3 bucket (cost); tracked in README hardening list.
   #checkov:skip=CKV2_AWS_28:WAF not attached (cost); tracked in README hardening list. ALB still drops invalid headers and uses strictest desync mitigation.
   #checkov:skip=CKV2_AWS_20:HTTP->HTTPS redirect is implemented and turns on automatically once certificate_arn is set (domain not yet registered).
-  name               = "${var.name}-alb"
+  name               = var.name
   load_balancer_type = "application"
   internal           = false
   subnets            = aws_subnet.public[*].id
@@ -67,13 +65,11 @@ resource "aws_lb" "main" {
   enable_deletion_protection = var.alb_deletion_protection
   enable_http2               = true
   idle_timeout               = 60
-
-  tags = { Name = "${var.name}-alb" }
 }
 
 resource "aws_lb_target_group" "app" {
   #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; ALB->task hop stays in private subnets, restricted to 8080 between the two security groups.
-  name                 = "${var.name}-tg"
+  name                 = var.name
   target_type          = "ip" # required for Fargate awsvpc networking
   protocol             = "HTTP"
   port                 = local.container_port
@@ -91,8 +87,6 @@ resource "aws_lb_target_group" "app" {
     healthy_threshold   = 2
     unhealthy_threshold = 2
   }
-
-  tags = { Name = "${var.name}-tg" }
 }
 
 # ---------- Listeners ----------
