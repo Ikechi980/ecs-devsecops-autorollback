@@ -4,3 +4,8 @@ region      = "us-east-1"
 vpc_cidr    = "10.20.0.0/16"
 az_count    = 2
 github_repo = "Ikechi980/ecs-devsecops-autorollback"
+
+# ALB
+allowed_ingress_cidrs   = ["0.0.0.0/0"] # e.g. ["203.0.113.10/32"] to restrict to your IP
+certificate_arn         = ""            # ACM cert ARN to enable HTTPS
+alb_deletion_protection = false         # true in real prod; false so demo stacks can be destroyed
