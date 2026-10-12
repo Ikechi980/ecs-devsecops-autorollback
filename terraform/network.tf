@@ -5,18 +5,21 @@
 data "aws_availability_zones" "available" {
   state = "available"
 
+  # Allowlist by zone ID: a closed, deterministic set that never silently
+  # grows when AWS adds an AZ (CKV_AWS_394).
   filter {
-    name   = "opt-in-status"
-    values = ["opt-in-not-required"]
+    name   = "zone-id"
+    values = var.availability_zone_ids
   }
 }
 
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, var.az_count)
+  azs      = data.aws_availability_zones.available.names
+  az_count = length(var.availability_zone_ids)
 
   # /24s carved from the VPC CIDR: public = 0..n-1, private = 10..10+n-1
-  public_subnet_cidrs  = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, i)]
-  private_subnet_cidrs = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, i + 10)]
+  public_subnet_cidrs  = [for i in range(local.az_count) : cidrsubnet(var.vpc_cidr, 8, i)]
+  private_subnet_cidrs = [for i in range(local.az_count) : cidrsubnet(var.vpc_cidr, 8, i + 10)]
 }
 
 resource "aws_vpc" "main" {
@@ -42,7 +45,7 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  count = var.az_count
+  count = local.az_count
 
   vpc_id            = aws_vpc.main.id
   availability_zone = local.azs[count.index]
@@ -55,7 +58,7 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
-  count = var.az_count
+  count = local.az_count
 
   vpc_id                  = aws_vpc.main.id
   availability_zone       = local.azs[count.index]
@@ -91,14 +94,14 @@ resource "aws_main_route_table_association" "main" {
 }
 
 resource "aws_route_table_association" "public" {
-  count = var.az_count
+  count = local.az_count
 
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
 resource "aws_route_table_association" "private" {
-  count = var.az_count
+  count = local.az_count
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
@@ -107,6 +110,7 @@ resource "aws_route_table_association" "private" {
 # ---------- VPC flow logs (all traffic) ----------
 
 resource "aws_cloudwatch_log_group" "flow_logs" {
+  #checkov:skip=CKV_AWS_158:Encrypted at rest with a CloudWatch-owned key; customer-managed KMS ($1/mo) declined for cost. In README hardening list.
   name              = "/vpc/${var.name}/flow-logs"
   retention_in_days = var.log_retention_days
   # No kms_key_id: encrypted at rest with a CloudWatch-owned key (free).

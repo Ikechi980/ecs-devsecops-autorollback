@@ -28,11 +28,33 @@ resource "aws_vpc_security_group_ingress_rule" "endpoints_https" {
   cidr_ipv4         = each.value
 }
 
-# Only principals from this account may use the endpoints, so they can't be
-# used to reach (or exfiltrate to) another account's resources.
-data "aws_iam_policy_document" "endpoint_same_account" {
+# Endpoint policies: only principals from THIS account, and only the actions
+# the tasks actually need (image pull + log shipping). Anything else through
+# these endpoints is denied, so they can't be used to reach other accounts'
+# resources or to call unrelated APIs.
+locals {
+  ecr_pull_actions = [
+    "ecr:GetAuthorizationToken",
+    "ecr:BatchCheckLayerAvailability",
+    "ecr:GetDownloadUrlForLayer",
+    "ecr:BatchGetImage",
+    # first pull through the ECR Public pull-through cache
+    "ecr:BatchImportUpstreamImage",
+    "ecr:CreateRepository",
+  ]
+
+  endpoint_actions = {
+    "ecr.api" = local.ecr_pull_actions
+    "ecr.dkr" = local.ecr_pull_actions
+    "logs"    = ["logs:CreateLogStream", "logs:PutLogEvents"]
+  }
+}
+
+data "aws_iam_policy_document" "endpoint" {
+  for_each = local.interface_endpoints
+
   statement {
-    actions   = ["*"]
+    actions   = local.endpoint_actions[each.value]
     resources = ["*"]
 
     principals {
@@ -57,7 +79,7 @@ resource "aws_vpc_endpoint" "interface" {
   private_dns_enabled = true
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.endpoints.id]
-  policy              = data.aws_iam_policy_document.endpoint_same_account.json
+  policy              = data.aws_iam_policy_document.endpoint[each.value].json
 
   tags = { Name = "${var.name}-${each.value}" }
 }

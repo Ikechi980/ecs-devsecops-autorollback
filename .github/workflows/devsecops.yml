@@ -67,3 +67,27 @@ jobs:
             --ignore-unfixed \
             --exit-code 1 \
             --no-progress
+
+      # Hash-locked install (.github/requirements/checkov.txt, generated with
+      # pip-compile --generate-hashes on Python 3.12 = the runner's python3).
+      - name: Install checkov
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+          PIP_NO_CACHE_DIR: "1"
+        run: |
+          python3 -m venv "$RUNNER_TEMP/checkov"
+          "$RUNNER_TEMP/checkov/bin/pip" install --require-hashes -r .github/requirements/checkov.txt
+          echo "$RUNNER_TEMP/checkov/bin" >> "$GITHUB_PATH"
+
+      # Prove the custom policy still rejects services that can't roll back.
+      - name: Policy unit tests (CKV_IKE_ECS_1)
+        run: bash policies/checkov/tests/run.sh
+
+      - name: IaC scan (checkov)
+        run: |
+          checkov -d terraform \
+            --framework terraform \
+            --external-checks-dir policies/checkov \
+            --skip-download \
+            --compact \
+            --quiet

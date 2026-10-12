@@ -25,14 +25,14 @@ variable "vpc_cidr" {
   }
 }
 
-variable "az_count" {
-  description = "Number of AZs. ALB and tasks always share the same AZs."
-  type        = number
-  default     = 2
+variable "availability_zone_ids" {
+  description = "AZ IDs to use (IDs, not names: names map to different physical AZs per account). ALB and tasks share these AZs."
+  type        = list(string)
+  default     = ["use1-az2", "use1-az4"] # us-east-1a / us-east-1b in this account
 
   validation {
-    condition     = var.az_count >= 2 && var.az_count <= 3
-    error_message = "az_count must be 2 or 3 (ALB requires at least 2)."
+    condition     = length(var.availability_zone_ids) >= 2 && length(var.availability_zone_ids) <= 3
+    error_message = "Provide 2 or 3 AZ IDs (ALB requires at least 2)."
   }
 }
 

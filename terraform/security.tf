@@ -43,12 +43,15 @@ resource "aws_ecr_lifecycle_policy" "app" {
 # ---------- SSM: release state owned by the pipeline ----------
 # Terraform creates these once; deploy.sh writes the values. ignore_changes
 # stops terraform from reverting a release back to "bootstrap".
+# SecureString with the AWS-managed aws/ssm key: free, and the digest of what
+# is deployed is encrypted at rest (readers need --with-decryption).
 
 resource "aws_ssm_parameter" "image_current" {
   name        = "/${var.name}/image/current"
   description = "Image digest (repo@sha256:...) currently being deployed"
-  type        = "String"
-  value       = "bootstrap"
+  type        = "SecureString"
+  #checkov:skip=CKV_AWS_337:Encrypted with the AWS-managed aws/ssm key; customer-managed KMS ($1/mo) declined for cost. Value is an image digest, not a credential.
+  value = "bootstrap"
 
   lifecycle {
     ignore_changes = [value]
@@ -58,8 +61,9 @@ resource "aws_ssm_parameter" "image_current" {
 resource "aws_ssm_parameter" "image_last_known_good" {
   name        = "/${var.name}/image/last-known-good"
   description = "Image digest of the last release that passed rollout + bake"
-  type        = "String"
-  value       = "bootstrap"
+  type        = "SecureString"
+  #checkov:skip=CKV_AWS_337:Encrypted with the AWS-managed aws/ssm key; customer-managed KMS ($1/mo) declined for cost. Value is an image digest, not a credential.
+  value = "bootstrap"
 
   lifecycle {
     ignore_changes = [value]
@@ -69,6 +73,7 @@ resource "aws_ssm_parameter" "image_last_known_good" {
 # ---------- Logs ----------
 
 resource "aws_cloudwatch_log_group" "ecs" {
+  #checkov:skip=CKV_AWS_158:Encrypted at rest with a CloudWatch-owned key; customer-managed KMS ($1/mo) declined for cost. In README hardening list.
   name              = local.ecs_log_group_name
   retention_in_days = var.log_retention_days
   # No kms_key_id: encrypted at rest with a CloudWatch-owned key (free).
