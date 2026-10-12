@@ -1,0 +1,53 @@
+variable "name" {
+  description = "Name prefix for every resource (ECR repo, log group, SSM paths, ...)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{2,30}$", var.name))
+    error_message = "name must be 3-31 chars: lowercase letters, digits, hyphens; start with a letter."
+  }
+}
+
+variable "region" {
+  description = "AWS region."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR for the dedicated VPC. Must not overlap networks you may peer with."
+  type        = string
+  default     = "10.20.0.0/16"
+
+  validation {
+    condition     = can(cidrnetmask(var.vpc_cidr)) && tonumber(split("/", var.vpc_cidr)[1]) <= 20
+    error_message = "vpc_cidr must be a valid IPv4 CIDR of /20 or larger."
+  }
+}
+
+variable "az_count" {
+  description = "Number of AZs. ALB and tasks always share the same AZs."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.az_count >= 2 && var.az_count <= 3
+    error_message = "az_count must be 2 or 3 (ALB requires at least 2)."
+  }
+}
+
+variable "github_repo" {
+  description = "GitHub repo allowed to deploy, as owner/name."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repo))
+    error_message = "github_repo must be in owner/name form."
+  }
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention for app and VPC flow logs."
+  type        = number
+  default     = 365
+}
