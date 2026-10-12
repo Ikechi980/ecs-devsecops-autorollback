@@ -51,3 +51,31 @@ variable "log_retention_days" {
   type        = number
   default     = 365
 }
+
+variable "allowed_ingress_cidrs" {
+  description = "IPv4 CIDRs allowed to reach the ALB on 80/443. Narrow this to your IP for a private demo."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition     = length(var.allowed_ingress_cidrs) > 0 && alltrue([for c in var.allowed_ingress_cidrs : can(cidrnetmask(c))])
+    error_message = "allowed_ingress_cidrs must be a non-empty list of valid IPv4 CIDRs."
+  }
+}
+
+variable "certificate_arn" {
+  description = "ACM certificate ARN. Empty = HTTP only; set = HTTP redirects to HTTPS."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.certificate_arn == "" || can(regex("^arn:aws[a-z-]*:acm:", var.certificate_arn))
+    error_message = "certificate_arn must be empty or an ACM certificate ARN."
+  }
+}
+
+variable "alb_deletion_protection" {
+  description = "Block ALB deletion. Keep true in production; set false to allow terraform destroy."
+  type        = bool
+  default     = true
+}
