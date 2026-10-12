@@ -79,3 +79,21 @@ variable "alb_deletion_protection" {
   type        = bool
   default     = true
 }
+
+variable "desired_count" {
+  description = "Number of running tasks (one per AZ by default)."
+  type        = number
+  default     = 2
+}
+
+variable "task_cpu" {
+  description = "Fargate task CPU units."
+  type        = number
+  default     = 256
+}
+
+variable "task_memory" {
+  description = "Fargate task memory (MiB)."
+  type        = number
+  default     = 512
+}
