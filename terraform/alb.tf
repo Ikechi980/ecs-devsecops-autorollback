@@ -14,6 +14,7 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
+  #checkov:skip=CKV_AWS_260:Public web app: port 80 must be reachable. Narrow allowed_ingress_cidrs for a private deployment; with a certificate, 80 only redirects to HTTPS.
   for_each = toset(var.allowed_ingress_cidrs)
 
   security_group_id = aws_security_group.alb.id
@@ -52,6 +53,9 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_tasks" {
 # ---------- Load balancer ----------
 
 resource "aws_lb" "main" {
+  #checkov:skip=CKV_AWS_91:Access logs need a dedicated S3 bucket (cost); tracked in README hardening list.
+  #checkov:skip=CKV2_AWS_28:WAF not attached (cost); tracked in README hardening list. ALB still drops invalid headers and uses strictest desync mitigation.
+  #checkov:skip=CKV2_AWS_20:HTTP->HTTPS redirect is implemented and turns on automatically once certificate_arn is set (domain not yet registered).
   name               = "${var.name}-alb"
   load_balancer_type = "application"
   internal           = false
@@ -68,6 +72,7 @@ resource "aws_lb" "main" {
 }
 
 resource "aws_lb_target_group" "app" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; ALB->task hop stays in private subnets, restricted to 8080 between the two security groups.
   name                 = "${var.name}-tg"
   target_type          = "ip" # required for Fargate awsvpc networking
   protocol             = "HTTP"
@@ -94,6 +99,8 @@ resource "aws_lb_target_group" "app" {
 
 # HTTP: forwards when there is no certificate; otherwise only redirects.
 resource "aws_lb_listener" "http" {
+  #checkov:skip=CKV_AWS_2:HTTP forwards only while no certificate exists; with certificate_arn set this listener only 301-redirects to HTTPS.
+  #checkov:skip=CKV_AWS_103:Same as CKV_AWS_2. The HTTPS listener uses ELBSecurityPolicy-TLS13-1-2-2021-06 (TLS 1.2+ only).
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
