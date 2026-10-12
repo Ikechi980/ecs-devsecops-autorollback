@@ -55,6 +55,14 @@ RUN apt-get update \
 
 COPY --from=build /opt/venv /opt/venv
 
+# /tmp is the only writable path at runtime (read-only root FS in ECS).
+# Fargate creates bind-mount volumes as root:root 0755 unless the image
+# declares the path as a VOLUME, in which case it copies the image's
+# ownership/mode. 1777 (sticky, world-writable) = standard /tmp semantics,
+# so UID 10001 can create gunicorn's worker heartbeat files.
+RUN chmod 1777 /tmp
+VOLUME ["/tmp"]
+
 # Code is owned by root and only readable by the app user, so a compromised
 # process can't modify what it runs.
 WORKDIR /srv
