@@ -1,0 +1,22 @@
+# Local provider cache and state (state lives in S3)
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Plans can contain sensitive values
+*.tfplan
+tfplan
+
+# Variable values are environment-specific; only the example is committed
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# .terraform.lock.hcl IS committed (pins provider checksums)
