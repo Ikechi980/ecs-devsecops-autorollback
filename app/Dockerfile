@@ -1,4 +1,6 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# ^ The BuildKit frontend is code that runs at build time; pinned by digest
+#   like every other dependency.
 
 # Base image pinned by tag AND digest: the tag documents intent, the digest is
 # what actually gets pulled, so an upstream retag can't change our build.
