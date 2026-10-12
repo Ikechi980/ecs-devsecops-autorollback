@@ -119,3 +119,14 @@ variable "alarm_p99_latency_seconds" {
     error_message = "alarm_p99_latency_seconds must be positive."
   }
 }
+
+variable "github_oidc_provider_arn" {
+  description = "ARN of an existing GitHub OIDC provider to reuse. Empty = create one (only one per account is allowed)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.github_oidc_provider_arn == "" || can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$", var.github_oidc_provider_arn))
+    error_message = "Must be empty or a token.actions.githubusercontent.com OIDC provider ARN."
+  }
+}
