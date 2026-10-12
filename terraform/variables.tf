@@ -97,3 +97,25 @@ variable "task_memory" {
   type        = number
   default     = 512
 }
+
+variable "alarm_5xx_threshold" {
+  description = "Target 5xx count per minute that (for 2 consecutive minutes) triggers rollback."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.alarm_5xx_threshold >= 1
+    error_message = "alarm_5xx_threshold must be at least 1."
+  }
+}
+
+variable "alarm_p99_latency_seconds" {
+  description = "p99 target response time (seconds) that (2 of 3 minutes) triggers rollback."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.alarm_p99_latency_seconds > 0
+    error_message = "alarm_p99_latency_seconds must be positive."
+  }
+}
