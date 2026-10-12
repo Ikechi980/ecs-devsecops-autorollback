@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (git-ignored) and adjust.
+name        = "ecs-autorollback"
+region      = "us-east-1"
+vpc_cidr    = "10.20.0.0/16"
+az_count    = 2
+github_repo = "Ikechi980/ecs-devsecops-autorollback"
