@@ -58,6 +58,9 @@ jobs:
             --exit-code 1 \
             --no-progress
 
+      - name: Lint shell scripts (shellcheck)
+        run: shellcheck --version | head -2 && shellcheck scripts/*.sh policies/checkov/tests/run.sh
+
       # Hash-locked install (.github/requirements/checkov.txt, generated with
       # pip-compile --generate-hashes on Python 3.12 = the runner's python3).
       - name: Install checkov
@@ -219,6 +222,17 @@ jobs:
             echo "| Unhealthy drill build | \`${BREAK_HEALTH}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Registry creds aren't needed past the push; drop them before deploying.
       - name: Docker logout
         if: always()
         run: docker logout "${ECR_REPOSITORY%%/*}" || true
+
+      - name: Deploy to ECS
+        env:
+          CLUSTER: ${{ vars.ECS_CLUSTER }}
+          SERVICE: ${{ vars.ECS_SERVICE }}
+          NEW_IMAGE: ${{ steps.push.outputs.image }}
+          SSM_IMAGE_CURRENT: ${{ vars.SSM_IMAGE_CURRENT }}
+          SSM_IMAGE_LKG: ${{ vars.SSM_IMAGE_LKG }}
+          ROLLBACK_ALARMS: ${{ vars.ROLLBACK_ALARMS }}
+        run: bash scripts/deploy.sh
