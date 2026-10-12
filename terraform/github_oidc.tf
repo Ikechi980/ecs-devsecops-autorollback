@@ -10,6 +10,10 @@ locals {
     : aws_iam_openid_connect_provider.github[0].arn
   )
 
+  github_owner               = split("/", var.github_repo)[0]
+  github_name                = split("/", var.github_repo)[1]
+  github_oidc_subject_prefix = "repo:${local.github_owner}@${var.github_owner_id}/${local.github_name}@${var.github_repo_id}"
+
   ecs_service_arn = "arn:${local.partition}:ecs:${var.region}:${local.account_id}:service/${aws_ecs_cluster.main.name}/${aws_ecs_service.app.name}"
 }
 
@@ -24,9 +28,11 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 # ---------- Trust: ONLY this repo's `production` environment ----------
-# The sub claim for a job that declares `environment: production` is
-# repo:<owner>/<repo>:environment:production. PR jobs, other branches, forks
-# and other repos produce a different sub and are refused.
+# GitHub's immutable subject embeds numeric owner/repo IDs:
+#   repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:production
+# so a renamed, deleted-and-recreated, or squatted repo with the same name
+# can't obtain these credentials. PR jobs, other branches (blocked by the
+# environment's branch policy), forks and other repos are refused.
 
 data "aws_iam_policy_document" "deploy_trust" {
   statement {
@@ -46,7 +52,7 @@ data "aws_iam_policy_document" "deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "${local.github_oidc_url}:sub"
-      values   = ["repo:${var.github_repo}:environment:production"]
+      values   = ["${local.github_oidc_subject_prefix}:environment:production"]
     }
   }
 }

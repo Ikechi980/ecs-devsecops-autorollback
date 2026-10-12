@@ -5,6 +5,10 @@ vpc_cidr    = "10.20.0.0/16"
 availability_zone_ids = ["use1-az2", "use1-az4"]
 github_repo = "Ikechi980/ecs-devsecops-autorollback"
 
+# GitHub immutable OIDC subject IDs (gh api repos/<owner>/<repo>)
+github_owner_id = "252388907"
+github_repo_id  = "1414224018"
+
 # ALB
 allowed_ingress_cidrs   = ["0.0.0.0/0"] # e.g. ["203.0.113.10/32"] to restrict to your IP
 certificate_arn         = ""            # ACM cert ARN to enable HTTPS

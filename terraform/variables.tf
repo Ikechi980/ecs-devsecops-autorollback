@@ -130,3 +130,25 @@ variable "github_oidc_provider_arn" {
     error_message = "Must be empty or a token.actions.githubusercontent.com OIDC provider ARN."
   }
 }
+
+# Numeric IDs for GitHub's immutable OIDC subject. Find them with:
+#   gh api repos/<owner>/<repo> --jq '"repo_id=\(.id) owner_id=\(.owner.id)"'
+variable "github_owner_id" {
+  description = "Numeric ID of the GitHub repo owner (immutable OIDC subject)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "github_owner_id must be numeric."
+  }
+}
+
+variable "github_repo_id" {
+  description = "Numeric ID of the GitHub repo (immutable OIDC subject)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repo_id))
+    error_message = "github_repo_id must be numeric."
+  }
+}
