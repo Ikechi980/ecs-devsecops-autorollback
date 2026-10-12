@@ -248,6 +248,16 @@ resource "aws_ecs_service" "app" {
     rollback = true
   }
 
+  # Layer 2: roll back if a rollback alarm fires while the deployment runs.
+  alarms {
+    enable   = true
+    rollback = true
+    alarm_names = [
+      aws_cloudwatch_metric_alarm.target_5xx.alarm_name,
+      aws_cloudwatch_metric_alarm.target_p99_latency.alarm_name,
+    ]
+  }
+
   health_check_grace_period_seconds = 30
 
   network_configuration {

@@ -12,3 +12,8 @@ output "ecs_service" {
   description = "ECS service name."
   value       = aws_ecs_service.app.name
 }
+
+output "rollback_alarm_names" {
+  description = "CloudWatch alarms ECS (and deploy.sh's bake window) watch for rollback."
+  value       = [aws_cloudwatch_metric_alarm.target_5xx.alarm_name, aws_cloudwatch_metric_alarm.target_p99_latency.alarm_name]
+}
