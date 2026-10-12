@@ -22,8 +22,6 @@ jobs:
     env:
       GITLEAKS_VERSION: "8.30.1"
       GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-      TRIVY_VERSION: "0.75.0"
-      TRIVY_SHA256: "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f"
     steps:
       # Actions are pinned to full commit SHAs (tags are mutable).
       - name: Checkout
@@ -47,17 +45,9 @@ jobs:
       - name: Secrets scan (gitleaks)
         run: gitleaks git . --redact --no-banner --exit-code 1 --verbose
 
-      # Same pattern as gitleaks: pinned, checksum-verified binary instead of
-      # trivy-action (whose tags were hijacked in a 2026 supply-chain attack).
+      # Pinned, checksum-verified binary (see the composite action).
       - name: Install trivy
-        run: |
-          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
-          curl -sSfL -o "$tarball" \
-            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${tarball}"
-          echo "${TRIVY_SHA256}  ${tarball}" | sha256sum --check --strict
-          tar -xzf "$tarball" trivy
-          sudo install -m 0755 trivy /usr/local/bin/trivy
-          rm -f "$tarball" trivy
+        uses: ./.github/actions/install-trivy
 
       - name: Dependency scan (trivy fs)
         run: |
@@ -91,3 +81,144 @@ jobs:
             --skip-download \
             --compact \
             --quiet
+
+  # Build -> scan -> push. Only main (push or manual run) ever releases; PRs
+  # stop at security-gates. The `production` environment only accepts main,
+  # and the AWS role only trusts this repo's production environment.
+  release:
+    needs: security-gates
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    # One release at a time; never cancel a deploy halfway through.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # OIDC token for AWS; no long-lived keys
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    env:
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      BREAK_HEALTH: ${{ github.event_name == 'workflow_dispatch' && inputs.break_health }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Image metadata
+        id: meta
+        run: |
+          tag="${GITHUB_SHA}"
+          fail_health=false
+          if [[ "${BREAK_HEALTH}" == "true" ]]; then
+            tag="${tag}-broken"
+            fail_health=true
+            echo "::warning::break_health is set: building a deliberately UNHEALTHY image (rollback drill)"
+          fi
+          {
+            echo "tag=${tag}"
+            echo "fail_health=${fail_health}"
+            echo "image=${ECR_REPOSITORY}:${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          FAIL_HEALTH: ${{ steps.meta.outputs.fail_health }}
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg APP_VERSION="${GITHUB_SHA::12}" \
+            --build-arg FAIL_HEALTH="${FAIL_HEALTH}" \
+            --label org.opencontainers.image.revision="${GITHUB_SHA}" \
+            --label org.opencontainers.image.source="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --tag "${IMAGE}" \
+            app
+
+      - name: Install trivy
+        uses: ./.github/actions/install-trivy
+
+      # Gate BEFORE push: a vulnerable image never reaches the registry.
+      # Also scans for secrets baked into image layers.
+      - name: Image scan (trivy)
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          trivy image "${IMAGE}" \
+            --scanners vuln,secret \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --no-progress
+
+      - name: Generate SBOM (CycloneDX)
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: trivy image "${IMAGE}" --format cyclonedx --output sbom.cdx.json --no-progress
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ steps.meta.outputs.tag }}
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Tags are IMMUTABLE in ECR. A re-run for the same commit reuses the
+      # already-pushed (and already-scanned) image instead of failing.
+      - name: Push and resolve digest
+        id: push
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          registry="${ECR_REPOSITORY%%/*}"
+          repo_name="${ECR_REPOSITORY#*/}"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${registry}"
+
+          describe_digest() {
+            aws ecr describe-images --repository-name "${repo_name}" \
+              --image-ids imageTag="${TAG}" \
+              --query 'imageDetails[0].imageDigest' --output text
+          }
+
+          if digest="$(describe_digest 2>/dev/null)"; then
+            echo "::notice::Tag ${TAG} already exists (immutable); reusing ${digest}"
+          else
+            docker push "${IMAGE}"
+            digest="$(describe_digest)"
+          fi
+
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not resolve a valid digest for ${IMAGE} (got '${digest}')"
+            exit 1
+          fi
+
+          image_ref="${ECR_REPOSITORY}@${digest}"
+          echo "image=${image_ref}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Image pushed"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Tag | \`${TAG}\` |"
+            echo "| Digest ref | \`${image_ref}\` |"
+            echo "| Unhealthy drill build | \`${BREAK_HEALTH}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Docker logout
+        if: always()
+        run: docker logout "${ECR_REPOSITORY%%/*}" || true
