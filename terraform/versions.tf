@@ -22,12 +22,9 @@ terraform {
 provider "aws" {
   region = var.region
 
+  # Every resource gets these tags; no per-resource tag blocks needed.
   default_tags {
-    tags = {
-      Project   = var.name
-      ManagedBy = "terraform"
-      Repo      = var.github_repo
-    }
+    tags = merge({ Name = var.name }, var.tags)
   }
 }
 

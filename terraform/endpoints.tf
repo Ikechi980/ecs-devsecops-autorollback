@@ -9,12 +9,11 @@ locals {
 }
 
 resource "aws_security_group" "endpoints" {
-  name        = "${var.name}-vpc-endpoints"
+  name        = "vpc-endpoints"
   description = "HTTPS from private subnets to interface VPC endpoints"
   vpc_id      = aws_vpc.main.id
 
   # No egress rules: endpoint ENIs only answer inbound connections.
-  tags = { Name = "${var.name}-vpc-endpoints" }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "endpoints_https" {
@@ -80,8 +79,6 @@ resource "aws_vpc_endpoint" "interface" {
   subnet_ids          = aws_subnet.private[*].id
   security_group_ids  = [aws_security_group.endpoints.id]
   policy              = data.aws_iam_policy_document.endpoint[each.value].json
-
-  tags = { Name = "${var.name}-${each.value}" }
 }
 
 # S3 gateway endpoint (free). Restricted to the bucket ECR serves image
@@ -104,6 +101,4 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
   policy            = data.aws_iam_policy_document.s3_ecr_layers_only.json
-
-  tags = { Name = "${var.name}-s3" }
 }

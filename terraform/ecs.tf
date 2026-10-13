@@ -2,7 +2,7 @@ locals {
   account_id = data.aws_caller_identity.current.account_id
   partition  = data.aws_partition.current.partition
 
-  ecr_public_cache_prefix = "${var.name}-ecr-public"
+  ecr_public_cache_prefix = "ecr-public"
 
   # Bootstrap image: same digest as app/Dockerfile's base, pulled from ECR
   # Public *through our private ECR* (pull-through cache), because tasks have
@@ -111,11 +111,9 @@ resource "aws_ecs_cluster" "main" {
 # ---------- Task security group ----------
 
 resource "aws_security_group" "tasks" {
-  name        = "${var.name}-tasks"
+  name        = "tasks"
   description = "App tasks: 8080 from the ALB only; 443 out to AWS endpoints only"
   vpc_id      = aws_vpc.main.id
-
-  tags = { Name = "${var.name}-tasks" }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb" {

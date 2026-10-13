@@ -26,22 +26,16 @@ resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true # required for interface endpoint private DNS
   enable_dns_hostnames = true
-
-  tags = { Name = "${var.name}-vpc" }
 }
 
 # Lock down the default SG (CIS 5.4): no rules at all, so anything that
 # accidentally lands in it can't talk to anything.
 resource "aws_default_security_group" "default" {
   vpc_id = aws_vpc.main.id
-
-  tags = { Name = "${var.name}-default-deny" }
 }
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
-
-  tags = { Name = "${var.name}-igw" }
 }
 
 resource "aws_subnet" "public" {
@@ -53,8 +47,6 @@ resource "aws_subnet" "public" {
 
   # The ALB gets its own addresses; nothing here needs auto-assigned public IPs.
   map_public_ip_on_launch = false
-
-  tags = { Name = "${var.name}-public-${local.azs[count.index]}", Tier = "public" }
 }
 
 resource "aws_subnet" "private" {
@@ -64,8 +56,6 @@ resource "aws_subnet" "private" {
   availability_zone       = local.azs[count.index]
   cidr_block              = local.private_subnet_cidrs[count.index]
   map_public_ip_on_launch = false
-
-  tags = { Name = "${var.name}-private-${local.azs[count.index]}", Tier = "private" }
 }
 
 resource "aws_route_table" "public" {
@@ -75,15 +65,11 @@ resource "aws_route_table" "public" {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.main.id
   }
-
-  tags = { Name = "${var.name}-public-rt" }
 }
 
 # No default route: private subnets are isolated from the internet.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
-
-  tags = { Name = "${var.name}-private-rt" }
 }
 
 # Explicit associations everywhere, and the main route table is the private
@@ -169,6 +155,4 @@ resource "aws_flow_log" "main" {
   log_destination          = aws_cloudwatch_log_group.flow_logs.arn
   iam_role_arn             = aws_iam_role.flow_logs.arn
   max_aggregation_interval = 60
-
-  tags = { Name = "${var.name}-flow-logs" }
 }
