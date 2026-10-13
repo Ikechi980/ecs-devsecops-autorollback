@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Minimal stateful mock of the aws CLI calls deploy.sh makes.
+
+Used by scripts/tests/test_deploy.sh. MOCK_STATE: path to a JSON state file. MOCK_SCENARIO:
+  success       - new deployment COMPLETES after a few polls
+  breaker       - circuit breaker rolls back to the previous task def
+  alarm_in_bake - rollout COMPLETES, then a rollback alarm goes into ALARM
+  missing_alarm - one of ROLLBACK_ALARMS does not exist
+  cancel        - rollout never completes (for the SIGTERM test)
+Every call is appended to MOCK_STATE + ".log".
+"""
+import json, os, sys
+
+state_path = os.environ["MOCK_STATE"]
+scenario = os.environ.get("MOCK_SCENARIO", "success")
+args = sys.argv[1:]
+
+with open(state_path + ".log", "a") as f:
+    f.write(" ".join(args) + "\n")
+
+def load():
+    with open(state_path) as f:
+        return json.load(f)
+
+def save(s):
+    with open(state_path, "w") as f:
+        json.dump(s, f)
+
+def opt(name, default=None):
+    if name in args:
+        return args[args.index(name) + 1]
+    return default
+
+def out(obj):
+    """Apply a tiny subset of --query/--output used by deploy.sh."""
+    q = opt("--query")
+    fmt = opt("--output", "json")
+    if q:
+        for part in q.split("."):
+            if part.endswith("[0]"):
+                obj = obj[part[:-3]][0]
+            else:
+                obj = obj[part]
+    if fmt == "text":
+        print(obj if not isinstance(obj, list) else "\t".join(map(str, obj)))
+    else:
+        print(json.dumps(obj))
+
+s = load()
+svc, cmd = args[0], args[1]
+
+if svc == "ssm" and cmd == "get-parameter":
+    out({"Parameter": {"Value": s["ssm"][opt("--name")]}})
+elif svc == "ssm" and cmd == "put-parameter":
+    s["ssm"][opt("--name")] = opt("--value"); save(s); print("{}")
+elif svc == "ecs" and cmd == "describe-task-definition":
+    td = opt("--task-definition")
+    out({"taskDefinition": s["taskdefs"][td]})
+elif svc == "ecs" and cmd == "register-task-definition":
+    body = json.loads(opt("--cli-input-json"))
+    rev = len(s["taskdefs"]) + 1
+    arn = f"arn:aws:ecs:us-east-1:1:task-definition/{body['family']}:{rev}"
+    body.update({"taskDefinitionArn": arn, "revision": rev, "status": "ACTIVE"})
+    s["taskdefs"][arn] = body
+    s["registered"] = body
+    save(s)
+    out({"taskDefinition": body})
+elif svc == "ecs" and cmd == "update-service":
+    td = opt("--task-definition")
+    for d in s["deployments"]:
+        d["status"] = "ACTIVE"
+    s["deployments"].insert(0, {"status": "PRIMARY", "taskDefinition": td,
+        "rolloutState": "IN_PROGRESS", "rolloutStateReason": "",
+        "runningCount": 0, "pendingCount": 2, "failedTasks": 0})
+    s["service_td"] = td; s["polls"] = 0; save(s); print("{}")
+elif svc == "ecs" and cmd == "describe-services":
+    p = s["deployments"][0]
+    if p["status"] == "PRIMARY" and p["rolloutState"] == "IN_PROGRESS" and "polls" in s:
+        s["polls"] += 1
+        if s["polls"] >= 3 and not (scenario == "cancel" and p["taskDefinition"] != s["prev_td"]):
+            if scenario == "breaker" and p["taskDefinition"] != s["prev_td"]:
+                p.update(status="ACTIVE", rolloutState="FAILED", failedTasks=3,
+                         rolloutStateReason="ECS deployment circuit breaker: tasks failed to start.")
+                s["deployments"].insert(0, {"status": "PRIMARY", "taskDefinition": s["prev_td"],
+                    "rolloutState": "IN_PROGRESS", "rolloutStateReason": "rolling back",
+                    "runningCount": 2, "pendingCount": 0, "failedTasks": 0})
+                s["service_td"] = s["prev_td"]
+            else:
+                p.update(rolloutState="COMPLETED", runningCount=2, pendingCount=0)
+                s["deployments"] = [p]
+        else:
+            p.update(runningCount=1, pendingCount=1)
+        save(s)
+    elif p["rolloutState"] == "IN_PROGRESS" and p["taskDefinition"] == s["prev_td"]:
+        # a rollback deployment settles on the next poll
+        p.update(rolloutState="COMPLETED"); s["deployments"] = [p]; save(s)
+    out({"services": [{"taskDefinition": s["service_td"], "deployments": s["deployments"]}]})
+elif svc == "cloudwatch" and cmd == "describe-alarms":
+    i = args.index("--alarm-names") + 1
+    names = []
+    while i < len(args) and not args[i].startswith("--"):
+        names.append(args[i]); i += 1
+    s["alarm_polls"] = s.get("alarm_polls", 0) + 1
+    firing = scenario == "alarm_in_bake" and s["alarm_polls"] >= 2
+    if scenario == "missing_alarm":
+        names = names[:1]
+    save(s)
+    out({"MetricAlarms": [{"AlarmName": n, "StateValue": "ALARM" if (firing and k == 0) else "OK"}
+                          for k, n in enumerate(names)]})
+else:
+    sys.stderr.write(f"mock aws: unhandled call: {args}\n"); sys.exit(255)
