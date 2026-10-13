@@ -59,7 +59,13 @@ jobs:
             --no-progress
 
       - name: Lint shell scripts (shellcheck)
-        run: shellcheck --version | head -2 && shellcheck scripts/*.sh policies/checkov/tests/run.sh
+        run: shellcheck --version | head -2 && shellcheck scripts/*.sh scripts/tests/*.sh policies/checkov/tests/run.sh
+
+      # deploy.sh against a mocked aws CLI: success, circuit-breaker rollback,
+      # alarm during bake, missing alarm, cancellation. Proves the rollback
+      # handler restores the service and SSM before anything ships.
+      - name: Deploy script tests (mocked AWS)
+        run: bash scripts/tests/test_deploy.sh
 
       # Hash-locked install (.github/requirements/checkov.txt, generated with
       # pip-compile --generate-hashes on Python 3.12 = the runner's python3).
@@ -94,7 +100,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # build ~3m + rollout ~6m + bake 10m + possible rollback ~6m, with headroom
+    timeout-minutes: 45
     environment: production
     # One release at a time; never cancel a deploy halfway through.
     concurrency:
@@ -235,4 +242,5 @@ jobs:
           SSM_IMAGE_CURRENT: ${{ vars.SSM_IMAGE_CURRENT }}
           SSM_IMAGE_LKG: ${{ vars.SSM_IMAGE_LKG }}
           ROLLBACK_ALARMS: ${{ vars.ROLLBACK_ALARMS }}
+          BAKE_MINUTES: "10"
         run: bash scripts/deploy.sh
