@@ -114,6 +114,12 @@ resource "aws_security_group" "tasks" {
   name        = "tasks"
   description = "App tasks: 8080 from the ALB only; 443 out to AWS endpoints only"
   vpc_id      = aws_vpc.main.id
+
+  # In-use SGs can't be deleted; create the replacement and move attachments
+  # to it first, then delete the old one.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "tasks_from_alb" {

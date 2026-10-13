@@ -9,6 +9,12 @@ resource "aws_security_group" "alb" {
   name        = "alb"
   description = "Public HTTP(S) in; only the container port out to the private subnets"
   vpc_id      = aws_vpc.main.id
+
+  # In-use SGs can't be deleted; create the replacement and move attachments
+  # to it first, then delete the old one.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_http" {
